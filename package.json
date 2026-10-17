@@ -3,10 +3,16 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "dev": "mkdir -p out && bun run ./index.ts 2>&1 | tee \"out/$(date +%Y-%m-%d-%H%M-%S).txt\""
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "openai": "^7.36.0"
   }
 }
