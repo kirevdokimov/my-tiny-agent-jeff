@@ -6,6 +6,8 @@ import { observeOpenAI } from "@langfuse/openai";
 import { observe, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { Logger } from './logger';
 
+const TRACE_EACH_BODY = true
+
 /** One id for the whole run: Langfuse session id + local JSONL log file. */
 const sessionId = crypto.randomUUID();
 
@@ -130,11 +132,17 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
         logger.trace(message)
     }
 
-    const completion = await openai.chat.completions.create({
+    const body = {
         model: MODEL,
         messages,
         tools,
-    });
+    }
+
+    if (TRACE_EACH_BODY) {
+        logger.trace({ tag: "body", body })
+    }
+
+    const completion = await openai.chat.completions.create(body);
 
     const response = completion.choices[0]?.message as ORChatMessage
 
@@ -146,6 +154,7 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
     }
 
     messages.push(assistantMessage)
+    logger.trace({ tag: "completion", completion })
     logger.trace(assistantMessage)
 
     // If no calls just out the response
