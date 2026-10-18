@@ -4,6 +4,12 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { observeOpenAI } from "@langfuse/openai";
 import { observe, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
+import { Logger } from './logger';
+
+/** One id for the whole run: Langfuse session id + local JSONL log file. */
+const sessionId = crypto.randomUUID();
+
+const logger = await Logger.start(sessionId)
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -31,7 +37,9 @@ type ORChatMessage = OpenAI.Chat.Completions.ChatCompletion['choices'][number]['
     reasoning_details?: unknown;
 };
 
-const messages: (OpenAI.Chat.Completions.ChatCompletionMessageParam & { reasoning_details?: unknown })[] = []
+type Message = OpenAI.Chat.Completions.ChatCompletionMessageParam & { reasoning_details?: unknown }
+
+const messages: Message[] = []
 
 
 
@@ -113,10 +121,13 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
 
         if (userMessage === "exit") return { exit: true }
 
-        messages.push({
+        const message: Message = {
             role: 'user',
             content: userMessage
-        })
+        }
+
+        messages.push(message)
+        logger.trace(message)
     }
 
     const completion = await openai.chat.completions.create({
@@ -127,12 +138,15 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
 
     const response = completion.choices[0]?.message as ORChatMessage
 
-    messages.push({
+    const assistantMessage: Message = {
         role: 'assistant' as const,
         content: response.content,
         tool_calls: response.tool_calls,
         reasoning_details: response.reasoning_details, // Pass back unmodified
-    })
+    }
+
+    messages.push(assistantMessage)
+    logger.trace(assistantMessage)
 
     // If no calls just out the response
     if (!response.tool_calls?.length) {
@@ -152,11 +166,13 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
             console.log(`[tool call] bash ${rawArgs}. Response ${result}`)
 
             // Push tool response to the history
-            messages.push({
+            const toolMessage: Message = {
                 role: "tool",
                 tool_call_id: call.id,
                 content: result,
-            });
+            }
+            messages.push(toolMessage);
+            logger.trace(toolMessage)
         }
 
         // run next turn without human
@@ -186,7 +202,7 @@ async function main() {
         await propagateAttributes(
             {
                 traceName: "jeff-agent",
-                sessionId: crypto.randomUUID(),
+                sessionId,
                 tags: ["my-tiny-agent-jeff"],
             },
             async () => {
@@ -201,6 +217,7 @@ async function main() {
         // even if the loop threw, otherwise pending spans are lost.
         await langfuseSpanProcessor.forceFlush();
         rl.close();
+        logger.close()
     }
 }
 

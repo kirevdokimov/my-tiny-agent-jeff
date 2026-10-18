@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "mkdir -p out && bun run ./index.ts 2>&1 | tee \"out/$(date +%Y-%m-%d-%H%M-%S).txt\""
+    "dev": "bun run ./index.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
