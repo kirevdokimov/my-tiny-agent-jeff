@@ -13,6 +13,10 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@langfuse/openai": "^6.0.0",
+    "@langfuse/otel": "^6.0.0",
+    "@langfuse/tracing": "^6.0.0",
+    "@opentelemetry/sdk-node": "^0.223.0",
     "openai": "^7.36.0"
   }
 }

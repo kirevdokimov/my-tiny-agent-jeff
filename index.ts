@@ -1,5 +1,9 @@
 import OpenAI from 'openai';
 import * as readline from "node:readline/promises";
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
+import { observeOpenAI } from "@langfuse/openai";
+import { observe, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -10,10 +14,18 @@ const BASE_URL = "https://openrouter.ai/api/v1"
 const API_KEY = process.env.API_KEY
 const MODEL = "deepseek/deepseek-v4.1-flash"
 
-const openai = new OpenAI({
-    baseURL: BASE_URL,
-    apiKey: API_KEY,
-});
+// Send traces to Langfuse via OpenTelemetry.
+// Credentials come from LANGFUSE_SECRET_KEY / LANGFUSE_PUBLIC_KEY / LANGFUSE_BASE_URL.
+const langfuseSpanProcessor = new LangfuseSpanProcessor();
+new NodeSDK({ spanProcessors: [langfuseSpanProcessor] }).start();
+
+const openai = observeOpenAI(
+    new OpenAI({
+        baseURL: BASE_URL,
+        apiKey: API_KEY,
+    }),
+    { generationName: "chat-completion" },
+);
 
 type ORChatMessage = OpenAI.Chat.Completions.ChatCompletion['choices'][number]['message'] & {
     reasoning_details?: unknown;
@@ -39,9 +51,9 @@ const bashToolDefinition: OpenAI.Chat.Completions.ChatCompletionTool = {
                     type: "number",
                     description: "Optional timeout in milliseconds (default 10000)"
                 },
-                required: ["command"],
-                additionalProperties: false,
-            }
+            },
+            required: ["command"],
+            additionalProperties: false,
         }
     }
 }
@@ -50,7 +62,12 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     bashToolDefinition
 ]
 
-const bashToolExecute = async (command: string, timeoutMs: 10_000): Promise<string> => {
+const bashToolExecute = async (command: string, timeoutMs: number = 10_000): Promise<string> => {
+    // Guard against a missing/invalid timeout from the model: an undefined or 0
+    // delay makes setTimeout fire almost immediately and SIGTERM the child.
+    const effectiveTimeoutMs =
+        Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10_000;
+
     // Spawn a process
     const proc = Bun.spawn(["bash", "-c", command], {
         cwd: process.cwd(),
@@ -59,7 +76,7 @@ const bashToolExecute = async (command: string, timeoutMs: 10_000): Promise<stri
         env: process.env,
     });
 
-    const timer = setTimeout(() => proc.kill(), timeoutMs);
+    const timer = setTimeout(() => proc.kill(), effectiveTimeoutMs);
 
     const [stdout, stderr] = await Promise.all([
         new Response(proc.stdout).text(),
@@ -83,6 +100,9 @@ const bashToolExecute = async (command: string, timeoutMs: 10_000): Promise<stri
  chars]` : out;
 
 }
+
+// Wrap the tool so each invocation is recorded as a "tool" observation.
+const tracedBashToolExecute = observe(bashToolExecute, { name: "bash", asType: "tool" });
 
 const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: boolean }> => {
 
@@ -128,8 +148,8 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
         const args = JSON.parse(rawArgs)
 
         if (name === "bash" && args.command !== undefined) {
-            const result = await bashToolExecute(args.command, args.timeout_ms)
-            console.log(`[tool call] bash ${rawArgs}`)
+            const result = await tracedBashToolExecute(args.command, args.timeout_ms)
+            console.log(`[tool call] bash ${rawArgs}. Response ${result}`)
 
             // Push tool response to the history
             messages.push({
@@ -160,9 +180,28 @@ const loop = async () => {
 
 async function main() {
 
-    await loop()
-
-    rl.close();
+    try {
+        // Group the whole session under one trace; the LLM generations and bash
+        // tool spans created inside are automatically nested under it.
+        await propagateAttributes(
+            {
+                traceName: "jeff-agent",
+                sessionId: crypto.randomUUID(),
+                tags: ["my-tiny-agent-jeff"],
+            },
+            async () => {
+                await startActiveObservation("agent-loop", async (span) => {
+                    await loop();
+                    span.update({ output: "session ended" });
+                });
+            },
+        );
+    } finally {
+        // The SDK batches events in the background; always flush before exiting,
+        // even if the loop threw, otherwise pending spans are lost.
+        await langfuseSpanProcessor.forceFlush();
+        rl.close();
+    }
 }
 
 main();
