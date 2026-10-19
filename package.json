@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "agent": "bun run ./src/agent.ts"
+    "agent": "bun run ./src/agent.ts",
+    "e": "bun run ./src/embeddings.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
