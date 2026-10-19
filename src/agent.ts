@@ -4,7 +4,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { observeOpenAI } from "@langfuse/openai";
 import { observe, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
-import { Logger } from './logger';
+import { Logger } from './utils/logger';
 
 const TRACE_EACH_BODY = true
 
