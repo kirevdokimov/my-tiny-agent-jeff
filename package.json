@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "agent": "bun run ./src/agent.ts",
-    "e": "bun run ./src/embeddings.ts"
+    "e": "bun run ./src/make-embeddings.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

@@ -5,6 +5,7 @@ import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { observeOpenAI } from "@langfuse/openai";
 import { observe, propagateAttributes, startActiveObservation } from "@langfuse/tracing";
 import { Logger } from './utils/logger';
+import { searchChunksToolDefinition, searchChunksToolExecute } from './tools/search-chunks';
 
 const TRACE_EACH_BODY = true
 
@@ -69,7 +70,8 @@ const bashToolDefinition: OpenAI.Chat.Completions.ChatCompletionTool = {
 }
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
-    bashToolDefinition
+    bashToolDefinition,
+    searchChunksToolDefinition,
 ]
 
 const bashToolExecute = async (command: string, timeoutMs: number = 10_000): Promise<string> => {
@@ -185,6 +187,17 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
             console.log(`[tool call] bash ${rawArgs}. Response ${result}`)
 
             // Push tool response to the history
+            const toolMessage: Message = {
+                role: "tool",
+                tool_call_id: call.id,
+                content: result,
+            }
+            messages.push(toolMessage);
+            logger.trace(toolMessage)
+        } else if (name === "search_chunks" && args.query !== undefined) {
+            const result = await searchChunksToolExecute(args.query, args.limit)
+            console.log(`[tool call] search_chunks ${rawArgs}. Response ${result}`)
+
             const toolMessage: Message = {
                 role: "tool",
                 tool_call_id: call.id,
