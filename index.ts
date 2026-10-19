@@ -136,6 +136,16 @@ const oneTurn = async (askHuman: boolean): Promise<{ exit: true } | { askHuman: 
         model: MODEL,
         messages,
         tools,
+        // thinking: {
+        //     type: "disabled"
+        // }
+        // reasoning_effort: "none"
+        // max_tokens: 64
+        // response_format: {
+        //     type: "json_object"
+        // }
+        // temperature: 1.8
+        // stop: ["nobel prize", "Nobel Prize", "Nobel Prizes"]
     }
 
     if (TRACE_EACH_BODY) {
